@@ -53,7 +53,7 @@ class ProgressPage extends StatelessWidget {
             duration: _duration,
           ),
           const SizedBox(height: 18),
-          _ActivityCard(daily: daily, duration: _duration),
+          ActivityGraph(daily: daily, duration: _duration),
           const SizedBox(height: 18),
           _RecentWeek(daily: daily, duration: _duration),
         ],
@@ -121,10 +121,10 @@ class _Metric extends StatelessWidget {
   );
 }
 
-class _ActivityCard extends StatelessWidget {
+class ActivityGraph extends StatelessWidget {
   final Map<DateTime, Duration> daily;
   final String Function(Duration) duration;
-  const _ActivityCard({required this.daily, required this.duration});
+  const ActivityGraph({super.key, required this.daily, required this.duration});
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();

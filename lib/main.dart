@@ -6,6 +6,10 @@ import 'models/focus_session.dart';
 import 'services/focus_statistics.dart';
 import 'services/focus_storage.dart';
 import 'progress_page.dart';
+import 'profile_page.dart';
+import 'auth_pages.dart';
+import 'services/supabase_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 const ink = Color(0xFF172A3A);
 const muted = Color(0xFF718096);
@@ -16,7 +20,11 @@ const mint = Color(0xFFDDF7ED);
 
 int coinsFor(Duration focusedTime) => focusedTime.inSeconds ~/ 60 * 3;
 
-void main() => runApp(const DreamFocusApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabasePublishableKey);
+  runApp(const DreamFocusApp());
+}
 
 class DreamFocusApp extends StatefulWidget {
   const DreamFocusApp({super.key});
@@ -27,6 +35,16 @@ class DreamFocusApp extends StatefulWidget {
 
 class _DreamFocusAppState extends State<DreamFocusApp> {
   ThemeMode _themeMode = ThemeMode.light;
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    try { _authSubscription = supabase.auth.onAuthStateChange.listen((_) => setState(() {})); } catch (_) {}
+  }
+
+  @override
+  void dispose() { _authSubscription?.cancel(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +70,8 @@ class _DreamFocusAppState extends State<DreamFocusApp> {
       ),
       themeMode: _themeMode,
       home: DashboardPage(
+        user: currentSupabaseUser,
+        onLogout: () => supabase.auth.signOut(),
         isDark: _themeMode == ThemeMode.dark,
         onThemeChanged: (value) => setState(() {
           _themeMode = value ? ThemeMode.dark : ThemeMode.light;
@@ -62,12 +82,16 @@ class _DreamFocusAppState extends State<DreamFocusApp> {
 }
 
 class DashboardPage extends StatefulWidget {
+  final User? user;
+  final Future<void> Function() onLogout;
   final bool isDark;
   final ValueChanged<bool> onThemeChanged;
   const DashboardPage({
     super.key,
     required this.isDark,
     required this.onThemeChanged,
+    required this.user,
+    required this.onLogout,
   });
 
   @override
@@ -79,6 +103,25 @@ class _DashboardPageState extends State<DashboardPage> {
   List<FocusSession> _sessions = [];
   int _balance = 0;
   bool _showProgress = false;
+  bool _showProfile = false;
+  String? _pendingDestination;
+
+  @override
+  void didUpdateWidget(covariant DashboardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user == null && widget.user != null && _pendingDestination != null) {
+      final destination = _pendingDestination!;
+      _pendingDestination = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (destination == 'Focus') {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => FocusPage(onCompleted: _loadData)));
+        } else {
+          setState(() { _showProfile = destination == 'Profile'; _showProgress = destination == 'Progress'; });
+        }
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -107,8 +150,25 @@ class _DashboardPageState extends State<DashboardPage> {
               isDark: widget.isDark,
               onThemeChanged: widget.onThemeChanged,
               progressSelected: _showProgress,
-              onDashboard: () => setState(() => _showProgress = false),
-              onProgress: () => setState(() => _showProgress = true),
+              profileSelected: _showProfile,
+              onDashboard: () => setState(() {
+                _showProgress = false;
+                _showProfile = false;
+              }),
+              onProgress: () {
+                if (widget.user == null) { _showAuthPrompt('Progress'); return; }
+                setState(() {
+                _showProgress = true;
+                _showProfile = false;
+                });
+              },
+              onProfile: () {
+                if (widget.user == null) { _showAuthPrompt('Profile'); return; }
+                setState(() {
+                _showProgress = false;
+                _showProfile = true;
+                });
+              },
             ),
             Expanded(
               child: LayoutBuilder(
@@ -117,13 +177,29 @@ class _DashboardPageState extends State<DashboardPage> {
                     horizontal: constraints.maxWidth > 900 ? 48 : 24,
                     vertical: 32,
                   ),
-                  child: _showProgress
+                  child: _showProfile
+                      ? ProfilePage(
+                          sessions: _sessions,
+                          balance: _balance,
+                          onViewAllSessions: () => setState(() {
+                            _showProfile = false;
+                            _showProgress = false;
+                          }),
+                        )
+                      : _showProgress
                       ? ProgressPage(sessions: _sessions)
                       : _MainContent(
                           sessions: _sessions,
                           balance: _balance,
                           onFocusComplete: _loadData,
                           isDark: widget.isDark,
+                          user: widget.user,
+                          onLogin: _openLogin,
+                          onSignup: _openSignup,
+                          onLogout: widget.onLogout,
+                          onProfile: () => setState(() { _showProfile = true; _showProgress = false; }),
+                          onSettings: _showSettings,
+                          onAuthRequired: () => _showAuthPrompt('Focus'),
                           onThemeChanged: widget.onThemeChanged,
                         ),
                 ),
@@ -134,20 +210,57 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
+
+  void _showAuthPrompt(String destination) {
+    _pendingDestination = destination;
+    showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: Text('Sign in to open $destination'),
+      content: const Text('Create an account to save your sessions, earn coins, and build your dream life.'),
+      actions: [
+        TextButton(onPressed: () { Navigator.pop(context); }, child: const Text('Continue Browsing')),
+        TextButton(onPressed: () { Navigator.pop(context); _openSignup(); }, child: const Text('Sign Up')),
+        FilledButton(onPressed: () { Navigator.pop(context); _openLogin(); }, child: const Text('Log In')),
+      ],
+    ));
+  }
+
+  void _openLogin() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => LoginPage(onCreateAccount: () {
+        Navigator.of(context).pop();
+        _openSignup();
+      }),
+    ));
+  }
+
+  void _openSignup() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SignUpPage()));
+  }
+
+  void _showSettings() {
+    showDialog<void>(context: context, builder: (_) => const AlertDialog(
+      title: Text('Settings'),
+      content: Text('Personal settings will be available here.'),
+    ));
+  }
 }
 
 class _Sidebar extends StatelessWidget {
   final bool isDark;
   final ValueChanged<bool> onThemeChanged;
   final bool progressSelected;
+  final bool profileSelected;
   final VoidCallback onDashboard;
   final VoidCallback onProgress;
+  final VoidCallback onProfile;
   const _Sidebar({
     required this.isDark,
     required this.onThemeChanged,
     required this.progressSelected,
+    required this.profileSelected,
     required this.onDashboard,
     required this.onProgress,
+    required this.onProfile,
   });
 
   @override
@@ -210,7 +323,7 @@ class _Sidebar extends StatelessWidget {
           _NavItem(
             Icons.grid_view_rounded,
             'Dashboard',
-            selected: !progressSelected,
+            selected: !progressSelected && !profileSelected,
             onTap: onDashboard,
           ),
           _NavItem(
@@ -226,25 +339,32 @@ class _Sidebar extends StatelessWidget {
           const SizedBox(height: 20),
           const Divider(),
           const SizedBox(height: 18),
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 19,
-                backgroundColor: lavender,
-                child: const Text(
-                  'DF',
-                  style: TextStyle(color: violet, fontWeight: FontWeight.bold),
+          InkWell(
+            onTap: onProfile,
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 19,
+                  backgroundColor: lavender,
+                  child: const Text(
+                    'DF',
+                    style: TextStyle(
+                      color: violet,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Your profile',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: ink),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Your profile',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: ink),
+                  ),
                 ),
-              ),
-              const Icon(Icons.more_horiz, color: muted),
-            ],
+                const Icon(Icons.more_horiz, color: muted),
+              ],
+            ),
           ),
         ],
       ),
@@ -266,18 +386,15 @@ class _NavItem extends StatelessWidget {
       color: selected ? lavender : Colors.transparent,
       borderRadius: BorderRadius.circular(12),
     ),
-    child: ListTile(
-      dense: true,
-      leading: Icon(icon, color: selected ? violet : muted, size: 21),
-      title: Text(
-        label,
-        style: TextStyle(
-          color: selected ? violet : muted,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-        ),
+    child: Material(
+      color: Colors.transparent,
+      child: ListTile(
+        dense: true,
+        leading: Icon(icon, color: selected ? violet : muted, size: 21),
+        title: Text(label, style: TextStyle(color: selected ? violet : muted, fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onTap: onTap ?? () {},
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      onTap: onTap ?? () {},
     ),
   );
 }
@@ -288,6 +405,13 @@ class _MainContent extends StatelessWidget {
   final Future<void> Function() onFocusComplete;
   final bool isDark;
   final ValueChanged<bool> onThemeChanged;
+  final User? user;
+  final VoidCallback onLogin;
+  final VoidCallback onSignup;
+  final Future<void> Function() onLogout;
+  final VoidCallback onProfile;
+  final VoidCallback onSettings;
+  final VoidCallback onAuthRequired;
 
   const _MainContent({
     required this.sessions,
@@ -295,6 +419,13 @@ class _MainContent extends StatelessWidget {
     required this.onFocusComplete,
     required this.isDark,
     required this.onThemeChanged,
+    required this.user,
+    required this.onLogin,
+    required this.onSignup,
+    required this.onLogout,
+    required this.onProfile,
+    required this.onSettings,
+    required this.onAuthRequired,
   });
 
   @override
@@ -324,24 +455,30 @@ class _MainContent extends StatelessWidget {
                 ),
               ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.notifications_none_rounded, color: muted),
-                  SizedBox(width: 8),
-                  Icon(Icons.nightlight_outlined, color: muted),
-                ],
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                  child: const Row(children: [Icon(Icons.notifications_none_rounded, color: muted), SizedBox(width: 8), Icon(Icons.nightlight_outlined, color: muted)]),
+                ),
+                const SizedBox(width: 10),
+                if (user == null) ...[
+                  OutlinedButton(onPressed: onLogin, child: const Text('Log In')),
+                  const SizedBox(width: 8),
+                  FilledButton(onPressed: onSignup, child: const Text('Sign Up')),
+                ] else PopupMenuButton<String>(
+                  onSelected: (value) { if (value == 'logout') onLogout(); if (value == 'profile') onProfile(); if (value == 'settings') onSettings(); },
+                  itemBuilder: (_) => const [PopupMenuItem(value: 'profile', child: Text('Profile')), PopupMenuItem(value: 'settings', child: Text('Settings')), PopupMenuItem(value: 'logout', child: Text('Log Out'))],
+                  child: Row(children: [CircleAvatar(radius: 16, backgroundColor: violet, child: Text(((user!.userMetadata?['display_name'] as String? ?? 'D').isEmpty ? 'D' : (user!.userMetadata?['display_name'] as String? ?? 'D')[0]).toUpperCase(), style: const TextStyle(color: Colors.white))), const SizedBox(width: 8), Text(user!.userMetadata?['display_name'] as String? ?? 'Dreamer', style: const TextStyle(fontWeight: FontWeight.w700))]),
+                ),
+              ],
             ),
           ],
         ),
         const SizedBox(height: 30),
-        _CoinCard(balance: balance),
+        _CoinCard(balance: balance, authenticated: user != null),
         const SizedBox(height: 16),
         Container(
           width: double.infinity,
@@ -385,10 +522,10 @@ class _MainContent extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () async {
+                onPressed: user == null ? onAuthRequired : () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => FocusPage(onCompleted: onFocusComplete),
+                          builder: (_) => FocusPage(onCompleted: onFocusComplete),
                     ),
                   );
                   await onFocusComplete();
@@ -542,7 +679,8 @@ class _MainContent extends StatelessWidget {
 
 class _CoinCard extends StatelessWidget {
   final int balance;
-  const _CoinCard({required this.balance});
+  final bool authenticated;
+  const _CoinCard({required this.balance, required this.authenticated});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -564,7 +702,7 @@ class _CoinCard extends StatelessWidget {
         Icon(Icons.monetization_on_rounded, color: Color(0xFFF3B93F), size: 27),
         SizedBox(width: 10),
         Text(
-          '$balance coins',
+          authenticated ? '$balance coins' : 'Sign in to track your coins',
           style: TextStyle(
             color: ink,
             fontWeight: FontWeight.w800,

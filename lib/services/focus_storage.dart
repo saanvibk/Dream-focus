@@ -1,47 +1,36 @@
-import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../models/focus_session.dart';
+import 'supabase_config.dart';
 
 class FocusStorage {
-  static const _sessionsKey = 'dreamfocus.sessions.v1';
-  static const _balanceKey = 'dreamfocus.coin_balance.v1';
-
   Future<List<FocusSession>> loadSessions() async {
-    final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(_sessionsKey);
-    if (raw == null) return [];
-    try {
-      final values = jsonDecode(raw);
-      if (values is! List) return [];
-      return values
-          .whereType<Map>()
-          .map(
-            (value) => FocusSession.fromJson(Map<String, dynamic>.from(value)),
-          )
-          .whereType<FocusSession>()
-          .where((session) => session.completed)
-          .toList()
-        ..sort((a, b) => b.endTime.compareTo(a.endTime));
-    } catch (_) {
-      return [];
-    }
+    final user = currentSupabaseUser;
+    if (user == null) return [];
+    final rows = await supabase.from('focus_sessions').select().eq('user_id', user.id).order('end_time', ascending: false);
+    return rows.map<FocusSession>((row) => FocusSession(
+      id: row['id'] as String,
+      date: DateTime.parse(row['start_time'] as String).toLocal(),
+      startTime: DateTime.parse(row['start_time'] as String).toLocal(),
+      endTime: DateTime.parse(row['end_time'] as String).toLocal(),
+      focusedSeconds: row['duration_seconds'] as int,
+      coinsEarned: row['coins_earned'] as int,
+      completed: true,
+    )).toList();
   }
 
   Future<int> loadBalance() async {
-    final preferences = await SharedPreferences.getInstance();
-    return preferences.getInt(_balanceKey) ?? 0;
+    final user = currentSupabaseUser;
+    if (user == null) return 0;
+    final row = await supabase.from('wallets').select('coins').eq('user_id', user.id).maybeSingle();
+    return (row?['coins'] as int?) ?? 0;
   }
 
-  Future<void> saveSession(FocusSession session, int newBalance) async {
-    final preferences = await SharedPreferences.getInstance();
-    final sessions = await loadSessions();
-    sessions.insert(0, session);
-    await preferences.setString(
-      _sessionsKey,
-      jsonEncode(sessions.map((item) => item.toJson()).toList()),
-    );
-    await preferences.setInt(_balanceKey, newBalance);
+  Future<void> saveSession(FocusSession session, int _) async {
+    final user = currentSupabaseUser;
+    if (user == null) return;
+    await supabase.rpc('complete_focus_session', params: {
+      'p_start_time': session.startTime.toUtc().toIso8601String(),
+      'p_end_time': session.endTime.toUtc().toIso8601String(),
+      'p_duration_seconds': session.focusedSeconds,
+    });
   }
 }

@@ -1,17 +1,27 @@
-# dreamfocus
+# DreamFocus
 
-A new Flutter project.
+## Flutter Web development over SSH
 
-## Getting Started
+On the remote laptop, from this project directory, run:
 
-This project is a starting point for a Flutter application.
+```sh
+FLUTTER_COMMAND=/home/sanketh/flutter/bin/flutter ./tool/run_web_dev.sh
+```
 
-A few resources to get you started if this is your first Flutter project:
+This starts Flutter Web in debug mode using the `web-server` device at
+`0.0.0.0:8080`. Keep this terminal open. Press `r` for hot reload and `R` for
+hot restart; press `q` to stop the server.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+From the local computer, forward the remote port:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+ssh -N -L 8080:127.0.0.1:8080 user@remote-laptop
+```
+
+Replace `user@remote-laptop` with the existing SSH destination. Then open
+<http://localhost:8080> in the local browser. Keep the SSH command running
+while developing.
+
+## Supabase setup
+
+Apply [`supabase/migrations/202608170001_dreamfocus_auth.sql`](/home/sanketh/dreamFocus/supabase/migrations/202608170001_dreamfocus_auth.sql) in the Supabase SQL Editor for the project URL configured in the app. It creates the profile, wallet, and focus-session tables, signup trigger, RLS policies, and the secure focus-session coin RPC.
