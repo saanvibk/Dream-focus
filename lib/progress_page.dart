@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'models/focus_session.dart';
 import 'services/focus_activity.dart';
+import 'models/stage7.dart';
 
 const _purple = Color(0xFF7C5CFC);
 const _muted = Color(0xFF718096);
@@ -53,6 +54,8 @@ class ProgressPage extends StatelessWidget {
             duration: _duration,
           ),
           const SizedBox(height: 18),
+          _StreakSummary(sessions: sessions),
+          const SizedBox(height: 18),
           ActivityGraph(daily: daily, duration: _duration),
           const SizedBox(height: 18),
           _RecentWeek(daily: daily, duration: _duration),
@@ -60,6 +63,12 @@ class ProgressPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StreakSummary extends StatelessWidget {
+  final List<FocusSession> sessions;
+  const _StreakSummary({required this.sessions});
+  @override Widget build(BuildContext context) => Card(child: Padding(padding: const EdgeInsets.all(20), child: Wrap(spacing: 36, runSpacing: 12, children: [Text('🔥 ${Stage7Calculations.currentStreak(sessions)} day streak', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)), Text('Longest: ${Stage7Calculations.longestStreak(sessions)} days', style: const TextStyle(color: _muted, fontSize: 17))])));
 }
 
 class _Summary extends StatelessWidget {

@@ -5,6 +5,10 @@ import 'progress_page.dart';
 import 'services/focus_activity.dart';
 import 'services/focus_statistics.dart';
 import 'services/profile_storage.dart';
+import 'models/stage7.dart';
+import 'services/stage7_storage.dart';
+import 'models/shop_item.dart';
+import 'services/shop_storage.dart';
 
 const _profileViolet = Color(0xFF7C5CFC);
 const _profileInk = Color(0xFF172A3A);
@@ -29,11 +33,15 @@ class _ProfilePageState extends State<ProfilePage> {
   final _storage = ProfileStorage();
   String _name = 'Dreamer';
   String _bio = 'Building my dream life one focused session at a time.';
+  int _achievementCount = 0;
+  int _ownedItemCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    Stage7Storage().loadUnlocked().then((value) { if (mounted) setState(() => _achievementCount = value.length); });
+    ShopStorage().loadPurchases().then((value) { if (mounted) setState(() => _ownedItemCount = value.map((p) => p.itemId).toSet().length); });
   }
 
   Future<void> _loadProfile() async {
@@ -135,7 +143,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ],
         ),
         const SizedBox(height: 22),
-        _Card(
+          _Card(
           child: Wrap(
             spacing: 24,
             runSpacing: 18,
@@ -178,6 +186,9 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
         ),
+        _Card(child: Row(children: [const Icon(Icons.local_fire_department, color: _profileViolet), const SizedBox(width: 10), Text('${Stage7Calculations.currentStreak(sessions)} day streak · Longest ${Stage7Calculations.longestStreak(sessions)} days', style: const TextStyle(fontWeight: FontWeight.w700))])),
+          _Card(child: Row(children: [const Icon(Icons.emoji_events, color: _profileViolet), const SizedBox(width: 10), Text('$_achievementCount / ${achievements.length} achievements', style: const TextStyle(fontWeight: FontWeight.w700))])),
+        _Card(child: Row(children: [const Icon(Icons.auto_awesome, color: _profileViolet), const SizedBox(width: 10), Text('Dream Life Progress', style: const TextStyle(fontWeight: FontWeight.w700)), const Spacer(), Text('$_ownedItemCount / ${shopCatalog.length} items unlocked', style: const TextStyle(color: _profileMuted))])),
         const SizedBox(height: 26),
         const Text(
           'Productivity overview',

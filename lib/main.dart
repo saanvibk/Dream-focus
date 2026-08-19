@@ -7,6 +7,12 @@ import 'services/focus_statistics.dart';
 import 'services/focus_storage.dart';
 import 'progress_page.dart';
 import 'profile_page.dart';
+import 'goals_page.dart';
+import 'achievements_page.dart';
+import 'shop_page.dart';
+import 'dream_world_page.dart';
+import 'services/shop_storage.dart';
+import 'models/stage7.dart';
 import 'auth_pages.dart';
 import 'services/supabase_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -104,11 +110,20 @@ class _DashboardPageState extends State<DashboardPage> {
   int _balance = 0;
   bool _showProgress = false;
   bool _showProfile = false;
+  bool _showGoals = false;
+  bool _showAchievements = false;
+  bool _showShop = false;
+  bool _showDreamWorld = false;
+  int _ownedItemCount = 0;
   String? _pendingDestination;
+  int _loadGeneration = 0;
 
   @override
   void didUpdateWidget(covariant DashboardPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.user?.id != widget.user?.id) {
+      _loadData();
+    }
     if (oldWidget.user == null && widget.user != null && _pendingDestination != null) {
       final destination = _pendingDestination!;
       _pendingDestination = null;
@@ -117,7 +132,7 @@ class _DashboardPageState extends State<DashboardPage> {
         if (destination == 'Focus') {
           Navigator.of(context).push(MaterialPageRoute(builder: (_) => FocusPage(onCompleted: _loadData)));
         } else {
-          setState(() { _showProfile = destination == 'Profile'; _showProgress = destination == 'Progress'; });
+          setState(() { _showProfile = destination == 'Profile'; _showProgress = destination == 'Progress'; _showGoals = destination == 'Goals'; _showAchievements = destination == 'Achievements'; _showShop = destination == 'Shop'; });
         }
       });
     }
@@ -130,13 +145,31 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadData() async {
+    final loadGeneration = ++_loadGeneration;
+    final userId = currentSupabaseUser?.id;
+    print('DASHBOARD_AUTH_USER $userId');
+    if (userId == null) {
+      if (mounted && loadGeneration == _loadGeneration) {
+        setState(() {
+          _sessions = [];
+          _balance = 0;
+          _ownedItemCount = 0;
+        });
+      }
+      return;
+    }
     final sessions = await _storage.loadSessions();
+    print('DASHBOARD_WALLET_QUERY user_id=$userId');
     final balance = await _storage.loadBalance();
-    if (mounted) {
+    final purchases = await ShopStorage().loadPurchases();
+    print('DASHBOARD_WALLET_RESULT user_id=$userId coins=$balance');
+    if (mounted && loadGeneration == _loadGeneration && currentSupabaseUser?.id == userId) {
       setState(() {
         _sessions = sessions;
         _balance = balance;
+        _ownedItemCount = purchases.map((p) => p.itemId).toSet().length;
       });
+      print('DASHBOARD_COINS $balance');
     }
   }
 
@@ -151,24 +184,36 @@ class _DashboardPageState extends State<DashboardPage> {
               onThemeChanged: widget.onThemeChanged,
               progressSelected: _showProgress,
               profileSelected: _showProfile,
+              goalsSelected: _showGoals,
+              achievementsSelected: _showAchievements,
+              shopSelected: _showShop,
+              dreamWorldSelected: _showDreamWorld,
               onDashboard: () => setState(() {
                 _showProgress = false;
                 _showProfile = false;
+                _showGoals = false;
+                _showAchievements = false;
+                _showShop = false;
+                _showDreamWorld = false;
               }),
               onProgress: () {
                 if (widget.user == null) { _showAuthPrompt('Progress'); return; }
                 setState(() {
-                _showProgress = true;
-                _showProfile = false;
+                _showProgress = true; _showDreamWorld = false;
+                _showProfile = false; _showGoals = false; _showAchievements = false; _showShop = false;
                 });
               },
               onProfile: () {
                 if (widget.user == null) { _showAuthPrompt('Profile'); return; }
                 setState(() {
-                _showProgress = false;
-                _showProfile = true;
+                _showProgress = false; _showGoals = false; _showAchievements = false; _showShop = false;
+                _showProfile = true; _showDreamWorld = false;
                 });
               },
+              onGoals: () { if (widget.user == null) { _showAuthPrompt('Goals'); return; } setState(() { _showGoals = true; _showProgress = false; _showProfile = false; _showAchievements = false; _showShop = false; _showDreamWorld = false; }); },
+              onAchievements: () { if (widget.user == null) { _showAuthPrompt('Achievements'); return; } setState(() { _showAchievements = true; _showGoals = false; _showProgress = false; _showProfile = false; _showShop = false; _showDreamWorld = false; }); },
+              onShop: () { if (widget.user == null) { _showAuthPrompt('Shop'); return; } setState(() { _showShop = true; _showAchievements = false; _showGoals = false; _showProgress = false; _showProfile = false; _showDreamWorld = false; }); },
+              onDreamWorld: () { if (widget.user == null) { _showAuthPrompt('Dream Life'); return; } setState(() { _showDreamWorld = true; _showShop = false; _showAchievements = false; _showGoals = false; _showProgress = false; _showProfile = false; }); },
             ),
             Expanded(
               child: LayoutBuilder(
@@ -177,7 +222,15 @@ class _DashboardPageState extends State<DashboardPage> {
                     horizontal: constraints.maxWidth > 900 ? 48 : 24,
                     vertical: 32,
                   ),
-                  child: _showProfile
+                  child: _showDreamWorld
+                      ? DreamWorldPage(balance: _balance, onVisitShop: () => setState(() { _showDreamWorld = false; _showShop = true; }))
+                      : _showShop
+                      ? ShopPage(balance: _balance, onBalanceChanged: (value) { setState(() => _balance = value); _loadData(); })
+                      : _showGoals
+                      ? GoalsPage(sessions: _sessions)
+                      : _showAchievements
+                      ? AchievementsPage(sessions: _sessions)
+                      : _showProfile
                       ? ProfilePage(
                           sessions: _sessions,
                           balance: _balance,
@@ -194,6 +247,8 @@ class _DashboardPageState extends State<DashboardPage> {
                           onFocusComplete: _loadData,
                           isDark: widget.isDark,
                           user: widget.user,
+                          ownedItemCount: _ownedItemCount,
+                          onDreamWorld: () => setState(() { _showDreamWorld = true; _showShop = false; }),
                           onLogin: _openLogin,
                           onSignup: _openSignup,
                           onLogout: widget.onLogout,
@@ -250,17 +305,33 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<bool> onThemeChanged;
   final bool progressSelected;
   final bool profileSelected;
+  final bool goalsSelected;
+  final bool achievementsSelected;
+  final bool shopSelected;
+  final bool dreamWorldSelected;
   final VoidCallback onDashboard;
   final VoidCallback onProgress;
   final VoidCallback onProfile;
+  final VoidCallback onGoals;
+  final VoidCallback onAchievements;
+  final VoidCallback onShop;
+  final VoidCallback onDreamWorld;
   const _Sidebar({
     required this.isDark,
     required this.onThemeChanged,
     required this.progressSelected,
     required this.profileSelected,
+    required this.goalsSelected,
+    required this.achievementsSelected,
+    required this.shopSelected,
+    required this.dreamWorldSelected,
     required this.onDashboard,
     required this.onProgress,
     required this.onProfile,
+    required this.onGoals,
+    required this.onAchievements,
+    required this.onShop,
+    required this.onDreamWorld,
   });
 
   @override
@@ -323,7 +394,7 @@ class _Sidebar extends StatelessWidget {
           _NavItem(
             Icons.grid_view_rounded,
             'Dashboard',
-            selected: !progressSelected && !profileSelected,
+            selected: !progressSelected && !profileSelected && !goalsSelected && !achievementsSelected && !shopSelected,
             onTap: onDashboard,
           ),
           _NavItem(
@@ -332,8 +403,10 @@ class _Sidebar extends StatelessWidget {
             selected: progressSelected,
             onTap: onProgress,
           ),
-          const _NavItem(Icons.auto_awesome_rounded, 'Dream Life'),
-          const _NavItem(Icons.emoji_events_outlined, 'Achievements'),
+          _NavItem(Icons.auto_awesome_rounded, 'Dream Life', selected: dreamWorldSelected, onTap: onDreamWorld),
+          _NavItem(Icons.flag_outlined, 'Goals', selected: goalsSelected, onTap: onGoals),
+          _NavItem(Icons.emoji_events_outlined, 'Achievements', selected: achievementsSelected, onTap: onAchievements),
+          _NavItem(Icons.shopping_bag_outlined, 'Shop', selected: shopSelected, onTap: onShop),
           const Spacer(),
           const _NavItem(Icons.settings_outlined, 'Settings'),
           const SizedBox(height: 20),
@@ -406,6 +479,8 @@ class _MainContent extends StatelessWidget {
   final bool isDark;
   final ValueChanged<bool> onThemeChanged;
   final User? user;
+  final int ownedItemCount;
+  final VoidCallback onDreamWorld;
   final VoidCallback onLogin;
   final VoidCallback onSignup;
   final Future<void> Function() onLogout;
@@ -420,6 +495,8 @@ class _MainContent extends StatelessWidget {
     required this.isDark,
     required this.onThemeChanged,
     required this.user,
+    required this.ownedItemCount,
+    required this.onDreamWorld,
     required this.onLogin,
     required this.onSignup,
     required this.onLogout,
@@ -614,18 +691,18 @@ class _MainContent extends StatelessWidget {
                       style: TextStyle(color: muted),
                     ),
                     const SizedBox(height: 14),
-                    const Text(
-                      'Your dream world is waiting',
+                    Text(
+                      ownedItemCount == 0 ? 'Your dream world is waiting.' : 'Your dream world is growing',
                       style: TextStyle(fontWeight: FontWeight.w700, color: ink),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      'Focus, earn coins, and unlock the life you\'ve always dreamed of.',
+                    Text(
+                      ownedItemCount == 0 ? 'Focus, earn coins, and unlock the life you\'ve always dreamed of.' : '$ownedItemCount items unlocked',
                       style: TextStyle(color: muted, fontSize: 12),
                     ),
                     const Spacer(),
                     OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: onDreamWorld,
                       icon: const Icon(Icons.arrow_forward_rounded, size: 18),
                       label: const Text('Explore Dream Life'),
                       style: OutlinedButton.styleFrom(
@@ -824,7 +901,9 @@ class _FocusPageState extends State<FocusPage> {
   Duration _focusedTime = Duration.zero;
   bool _paused = false;
   bool _complete = false;
+  bool _saving = false;
   int _balanceAfter = 0;
+  String? _saveError;
 
   @override
   void initState() {
@@ -859,11 +938,17 @@ class _FocusPageState extends State<FocusPage> {
   }
 
   Future<void> _stop() async {
-    if (_complete) return;
+    if (_complete || _saving) return;
+    print('STOP_CLICKED');
     final endTime = DateTime.now();
     final finalDuration = _liveFocusedTime;
     final earned = coinsFor(finalDuration);
-    final previousBalance = await _storage.loadBalance();
+    // Freeze the timestamp-based focused duration before any network work.
+    _ticker?.cancel();
+    if (mounted) setState(() { _focusedTime = finalDuration; _resumedAt = null; _saving = true; _saveError = null; });
+    print('TIMER_STOPPED');
+    print('DURATION_CALCULATED seconds=${finalDuration.inSeconds}');
+    print('COINS_CALCULATED coins=$earned');
     final session = FocusSession(
       id: '${_startTime.microsecondsSinceEpoch}',
       date: _startTime,
@@ -874,15 +959,32 @@ class _FocusPageState extends State<FocusPage> {
       completed: finalDuration.inSeconds > 0,
     );
     if (finalDuration.inSeconds > 0) {
-      await _storage.saveSession(session, previousBalance + earned);
-      await widget.onCompleted?.call();
+      try {
+        print('SESSION_SAVE_STARTED');
+        final persistedBalance = await _storage.saveSession(session);
+        print('SESSION_SAVE_SUCCESS');
+        print('WALLET_UPDATE_SUCCESS balance=$persistedBalance');
+        if (!mounted) return;
+        setState(() { _balanceAfter = persistedBalance; _saving = false; _complete = true; });
+        try {
+          await widget.onCompleted?.call();
+        } catch (error) {
+          // The session is already committed; dashboard refresh can be retried
+          // independently and must not hide the successful completion screen.
+          print('[wallet] dashboard refresh failed after committed session: $error');
+        }
+        print('COMPLETION_SCREEN');
+      } catch (error) {
+        if (mounted) setState(() { _saveError = 'Could not save your session.'; _saving = false; });
+        print('[wallet] completion UI error: $error');
+        return;
+      }
+    } else if (mounted) {
+      setState(() => _saving = false);
     }
-    setState(() {
-      _focusedTime = finalDuration;
-      _resumedAt = null;
-      _complete = true;
-      _balanceAfter = previousBalance + earned;
-    });
+    if (finalDuration.inSeconds == 0 && mounted) {
+      setState(() { _complete = true; });
+    }
   }
 
   @override
@@ -905,6 +1007,7 @@ class _FocusPageState extends State<FocusPage> {
                   ? _CompletionView(
                       focusedTime: focusedTime,
                       totalBalance: _balanceAfter,
+                      error: _saveError,
                       onDashboard: () => Navigator.of(context).pop(),
                       onAnother: () => Navigator.of(context).pushReplacement(
                         MaterialPageRoute(builder: (_) => const FocusPage()),
@@ -912,6 +1015,8 @@ class _FocusPageState extends State<FocusPage> {
                     )
                   : _ActiveFocusView(
                       focusedTime: focusedTime,
+                      saving: _saving,
+                      saveError: _saveError,
                       paused: _paused,
                       onPause: _pause,
                       onResume: _resume,
@@ -929,6 +1034,8 @@ class _FocusPageState extends State<FocusPage> {
 class _ActiveFocusView extends StatelessWidget {
   final Duration focusedTime;
   final bool paused;
+  final bool saving;
+  final String? saveError;
   final VoidCallback onPause;
   final VoidCallback onResume;
   final VoidCallback onStop;
@@ -937,6 +1044,8 @@ class _ActiveFocusView extends StatelessWidget {
   const _ActiveFocusView({
     required this.focusedTime,
     required this.paused,
+    required this.saving,
+    required this.saveError,
     required this.onPause,
     required this.onResume,
     required this.onStop,
@@ -954,8 +1063,8 @@ class _ActiveFocusView extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 20),
-      const Text(
-        'FOCUS SESSION',
+      Text(
+        saving ? 'SAVING SESSION…' : 'FOCUS SESSION',
         style: TextStyle(
           color: violet,
           fontWeight: FontWeight.w800,
@@ -1021,7 +1130,7 @@ class _ActiveFocusView extends StatelessWidget {
         alignment: WrapAlignment.center,
         children: [
           ElevatedButton.icon(
-            onPressed: paused ? onResume : onPause,
+            onPressed: saving ? null : (paused ? onResume : onPause),
             icon: Icon(paused ? Icons.play_arrow_rounded : Icons.pause_rounded),
             label: Text(paused ? 'Resume' : 'Pause'),
             style: ElevatedButton.styleFrom(
@@ -1034,7 +1143,7 @@ class _ActiveFocusView extends StatelessWidget {
             ),
           ),
           OutlinedButton(
-            onPressed: onStop,
+            onPressed: saving ? null : onStop,
             style: OutlinedButton.styleFrom(
               foregroundColor: ink,
               padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
@@ -1042,10 +1151,16 @@ class _ActiveFocusView extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            child: const Text('Stop Session'),
+            child: Text(saving ? 'Saving session…' : 'Stop Session'),
           ),
         ],
       ),
+      if (saveError != null) ...[
+        const SizedBox(height: 16),
+        Text(saveError!, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        TextButton(onPressed: saving ? null : onStop, child: const Text('Retry')),
+      ],
     ],
   );
 }
@@ -1244,21 +1359,28 @@ class _CompletionView extends StatelessWidget {
   final int totalBalance;
   final VoidCallback onDashboard;
   final VoidCallback onAnother;
+  final String? error;
 
   const _CompletionView({
     required this.focusedTime,
     required this.totalBalance,
     required this.onDashboard,
     required this.onAnother,
+    this.error,
   });
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      const Icon(Icons.celebration_rounded, color: violet, size: 52),
+      if (error != null) ...[
+        const Icon(Icons.error_outline, color: Colors.red, size: 52),
+        const SizedBox(height: 12),
+        Text(error!, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+      ] else
+        const Icon(Icons.celebration_rounded, color: violet, size: 52),
       const SizedBox(height: 18),
-      const Text(
-        'SESSION COMPLETE 🎉',
+      Text(
+        error == null ? 'SESSION COMPLETE 🎉' : 'SESSION NOT SAVED',
         style: TextStyle(color: ink, fontSize: 24, fontWeight: FontWeight.w800),
       ),
       const SizedBox(height: 10),
@@ -1298,9 +1420,9 @@ class _CompletionView extends StatelessWidget {
               ),
             ),
             const Divider(height: 34),
-            const Text('Total balance', style: TextStyle(color: muted)),
+            if (error == null) const Text('Total balance', style: TextStyle(color: muted)),
             const SizedBox(height: 8),
-            Text(
+            if (error == null) Text(
               '$totalBalance 🪙',
               style: const TextStyle(
                 color: ink,
