@@ -95,9 +95,12 @@ class _AuthScaffold extends StatelessWidget {
   const _AuthScaffold({required this.title, required this.subtitle, required this.fields, required this.error, required this.busy, required this.button, required this.onSubmit, required this.footer});
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(32),
+    resizeToAvoidBottomInset: true,
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: Column(
@@ -115,6 +118,7 @@ class _AuthScaffold extends StatelessWidget {
               footer,
             ],
           ),
+        ),
         ),
       ),
     ),

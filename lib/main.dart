@@ -105,6 +105,7 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _storage = FocusStorage();
   List<FocusSession> _sessions = [];
   int _balance = 0;
@@ -175,10 +176,80 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Row(
-          children: [
+    return LayoutBuilder(
+      builder: (context, viewport) {
+        final mobile = viewport.maxWidth < 700;
+        final content = LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: mobile ? 16 : (constraints.maxWidth > 900 ? 48 : 24),
+              vertical: mobile ? 20 : 32,
+            ),
+            child: _showDreamWorld
+                ? DreamWorldPage(balance: _balance, onVisitShop: () => setState(() { _showDreamWorld = false; _showShop = true; }))
+                : _showShop
+                ? ShopPage(balance: _balance, onBalanceChanged: (value) { setState(() => _balance = value); _loadData(); })
+                : _showGoals
+                ? GoalsPage(sessions: _sessions)
+                : _showAchievements
+                ? AchievementsPage(sessions: _sessions)
+                : _showProfile
+                ? ProfilePage(sessions: _sessions, balance: _balance, onViewAllSessions: () => setState(() { _showProfile = false; _showProgress = false; }))
+                : _showProgress
+                ? ProgressPage(sessions: _sessions)
+                : _MainContent(
+                    sessions: _sessions,
+                    balance: _balance,
+                    onFocusComplete: _loadData,
+                    isDark: widget.isDark,
+                    user: widget.user,
+                    ownedItemCount: _ownedItemCount,
+                    onDreamWorld: () => setState(() { _showDreamWorld = true; _showShop = false; }),
+                    onLogin: _openLogin,
+                    onSignup: _openSignup,
+                    onLogout: widget.onLogout,
+                    onProfile: () => setState(() { _showProfile = true; _showProgress = false; }),
+                    onSettings: _showSettings,
+                    onAuthRequired: () => _showAuthPrompt('Focus'),
+                    onThemeChanged: widget.onThemeChanged,
+                  ),
+          ),
+        );
+        print('SCAFFOLD_BODY_BUILT mobile=$mobile page=${_showShop ? 'Shop' : _showDreamWorld ? 'Dream Life' : _showProgress ? 'Progress' : _showGoals ? 'Goals' : _showAchievements ? 'Achievements' : _showProfile ? 'Profile' : 'Home'} auth=${widget.user != null}');
+        return Scaffold(
+          key: _scaffoldKey,
+          appBar: mobile ? AppBar(
+            elevation: 0,
+            titleSpacing: 0,
+            automaticallyImplyLeading: false,
+            leading: Builder(builder: (scaffoldContext) => IconButton(
+              tooltip: 'Open navigation',
+              icon: const Icon(Icons.menu_rounded),
+              onPressed: () {
+                print('DRAWER_OPEN_CALLBACK');
+                Scaffold.of(scaffoldContext).openDrawer();
+              },
+            )),
+            title: const Text('DreamFocus', style: TextStyle(fontWeight: FontWeight.w800)),
+            actions: [
+              Padding(padding: const EdgeInsets.only(right: 16), child: Center(child: Text('🪙 $_balance', style: const TextStyle(fontWeight: FontWeight.w800)))),
+            ],
+          ) : null,
+          drawer: mobile ? _MobileDrawer(
+            isDark: widget.isDark,
+            onThemeChanged: widget.onThemeChanged,
+            onDashboard: _selectDashboard,
+            onProgress: _selectProgress,
+            onProfile: _selectProfile,
+            onGoals: _selectGoals,
+            onAchievements: _selectAchievements,
+            onShop: _selectShop,
+            onDreamWorld: _selectDreamWorld,
+          ) : null,
+          body: SafeArea(
+            child: mobile
+                ? content
+                : Row(children: [
             _Sidebar(
               isDark: widget.isDark,
               onThemeChanged: widget.onThemeChanged,
@@ -215,56 +286,22 @@ class _DashboardPageState extends State<DashboardPage> {
               onShop: () { if (widget.user == null) { _showAuthPrompt('Shop'); return; } setState(() { _showShop = true; _showAchievements = false; _showGoals = false; _showProgress = false; _showProfile = false; _showDreamWorld = false; }); },
               onDreamWorld: () { if (widget.user == null) { _showAuthPrompt('Dream Life'); return; } setState(() { _showDreamWorld = true; _showShop = false; _showAchievements = false; _showGoals = false; _showProgress = false; _showProfile = false; }); },
             ),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) => SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: constraints.maxWidth > 900 ? 48 : 24,
-                    vertical: 32,
-                  ),
-                  child: _showDreamWorld
-                      ? DreamWorldPage(balance: _balance, onVisitShop: () => setState(() { _showDreamWorld = false; _showShop = true; }))
-                      : _showShop
-                      ? ShopPage(balance: _balance, onBalanceChanged: (value) { setState(() => _balance = value); _loadData(); })
-                      : _showGoals
-                      ? GoalsPage(sessions: _sessions)
-                      : _showAchievements
-                      ? AchievementsPage(sessions: _sessions)
-                      : _showProfile
-                      ? ProfilePage(
-                          sessions: _sessions,
-                          balance: _balance,
-                          onViewAllSessions: () => setState(() {
-                            _showProfile = false;
-                            _showProgress = false;
-                          }),
-                        )
-                      : _showProgress
-                      ? ProgressPage(sessions: _sessions)
-                      : _MainContent(
-                          sessions: _sessions,
-                          balance: _balance,
-                          onFocusComplete: _loadData,
-                          isDark: widget.isDark,
-                          user: widget.user,
-                          ownedItemCount: _ownedItemCount,
-                          onDreamWorld: () => setState(() { _showDreamWorld = true; _showShop = false; }),
-                          onLogin: _openLogin,
-                          onSignup: _openSignup,
-                          onLogout: widget.onLogout,
-                          onProfile: () => setState(() { _showProfile = true; _showProgress = false; }),
-                          onSettings: _showSettings,
-                          onAuthRequired: () => _showAuthPrompt('Focus'),
-                          onThemeChanged: widget.onThemeChanged,
-                        ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+            Expanded(child: content),
+          ]),
+          ),
+        );
+      },
     );
   }
+
+  void _closeMobile() => _scaffoldKey.currentState?.closeDrawer();
+  void _selectDashboard() { setState(() { _showProgress = false; _showProfile = false; _showGoals = false; _showAchievements = false; _showShop = false; _showDreamWorld = false; }); _closeMobile(); }
+  void _selectProgress() { if (widget.user == null) { _showAuthPrompt('Progress'); return; } setState(() { _showProgress = true; _showProfile = false; _showGoals = false; _showAchievements = false; _showShop = false; _showDreamWorld = false; }); _closeMobile(); }
+  void _selectProfile() { if (widget.user == null) { _showAuthPrompt('Profile'); return; } setState(() { _showProfile = true; _showProgress = false; _showGoals = false; _showAchievements = false; _showShop = false; _showDreamWorld = false; }); _closeMobile(); }
+  void _selectGoals() { if (widget.user == null) { _showAuthPrompt('Goals'); return; } setState(() { _showGoals = true; _showProgress = false; _showProfile = false; _showAchievements = false; _showShop = false; _showDreamWorld = false; }); _closeMobile(); }
+  void _selectAchievements() { if (widget.user == null) { _showAuthPrompt('Achievements'); return; } setState(() { _showAchievements = true; _showGoals = false; _showProgress = false; _showProfile = false; _showShop = false; _showDreamWorld = false; }); _closeMobile(); }
+  void _selectShop() { if (widget.user == null) { _showAuthPrompt('Shop'); return; } setState(() { _showShop = true; _showAchievements = false; _showGoals = false; _showProgress = false; _showProfile = false; _showDreamWorld = false; }); _closeMobile(); }
+  void _selectDreamWorld() { if (widget.user == null) { _showAuthPrompt('Dream Life'); return; } setState(() { _showDreamWorld = true; _showShop = false; _showAchievements = false; _showGoals = false; _showProgress = false; _showProfile = false; }); _closeMobile(); }
 
   void _showAuthPrompt(String destination) {
     _pendingDestination = destination;
@@ -298,6 +335,37 @@ class _DashboardPageState extends State<DashboardPage> {
       content: Text('Personal settings will be available here.'),
     ));
   }
+}
+
+class _MobileDrawer extends StatelessWidget {
+  final bool isDark;
+  final ValueChanged<bool> onThemeChanged;
+  final VoidCallback onDashboard, onProgress, onProfile, onGoals, onAchievements, onShop, onDreamWorld;
+  const _MobileDrawer({required this.isDark, required this.onThemeChanged, required this.onDashboard, required this.onProgress, required this.onProfile, required this.onGoals, required this.onAchievements, required this.onShop, required this.onDreamWorld});
+  @override
+  Widget build(BuildContext context) => Drawer(
+    child: SafeArea(child: ListView(padding: const EdgeInsets.fromLTRB(16, 20, 16, 24), children: [
+      Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: violet, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bolt_rounded, color: Colors.white)), const SizedBox(width: 12), const Text('DreamFocus', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800))]),
+      const SizedBox(height: 24),
+      _DrawerItem(Icons.home_rounded, 'Home', onDashboard),
+      _DrawerItem(Icons.timer_outlined, 'Focus', () { Navigator.pop(context); Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FocusPage())); }),
+      _DrawerItem(Icons.bar_chart_rounded, 'Progress', onProgress),
+      _DrawerItem(Icons.flag_outlined, 'Goals', onGoals),
+      _DrawerItem(Icons.shopping_bag_outlined, 'Shop', onShop),
+      _DrawerItem(Icons.auto_awesome_rounded, 'Dream Life', onDreamWorld),
+      _DrawerItem(Icons.emoji_events_outlined, 'Achievements', onAchievements),
+      _DrawerItem(Icons.person_outline_rounded, 'Profile', onProfile),
+      const Divider(height: 32),
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Dark mode'), value: isDark, onChanged: onThemeChanged, activeThumbColor: violet),
+    ])),
+  );
+}
+
+class _DrawerItem extends StatelessWidget {
+  final IconData icon; final String label; final VoidCallback onTap;
+  const _DrawerItem(this.icon, this.label, this.onTap);
+  @override
+  Widget build(BuildContext context) => ListTile(minVerticalPadding: 8, contentPadding: EdgeInsets.zero, leading: Icon(icon, color: muted), title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)), onTap: onTap);
 }
 
 class _Sidebar extends StatelessWidget {
@@ -380,7 +448,7 @@ class _Sidebar extends StatelessWidget {
                 size: 19,
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              const Flexible(
                 child: Text('Dark mode', style: TextStyle(color: muted)),
               ),
               Switch(
@@ -507,6 +575,7 @@ class _MainContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mobile = MediaQuery.sizeOf(context).width < 700;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -554,7 +623,7 @@ class _MainContent extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 30),
+        SizedBox(height: mobile ? 20 : 30),
         _CoinCard(balance: balance, authenticated: user != null),
         const SizedBox(height: 16),
         Container(
@@ -566,10 +635,13 @@ class _MainContent extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(24),
           ),
-          child: Row(
+          child: Flex(
+            direction: mobile ? Axis.vertical : Axis.horizontal,
+            mainAxisSize: mobile ? MainAxisSize.min : MainAxisSize.max,
+            crossAxisAlignment: mobile ? CrossAxisAlignment.start : CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(
+              const Flexible(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -590,8 +662,8 @@ class _MainContent extends StatelessWidget {
                   ],
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 18),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: mobile ? 0 : 18, vertical: mobile ? 18 : 0),
                 child: Icon(
                   Icons.track_changes_rounded,
                   color: Color(0xFFDCD4FF),
@@ -665,15 +737,18 @@ class _MainContent extends StatelessWidget {
         const SizedBox(height: 28),
         Container(
           width: double.infinity,
-          height: 340,
-          padding: const EdgeInsets.all(24),
+          height: mobile ? 390 : 340,
+          padding: EdgeInsets.all(mobile ? 18 : 24),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(22),
           ),
-          child: Row(
+          child: Flex(
+            direction: mobile ? Axis.vertical : Axis.horizontal,
+            mainAxisSize: mobile ? MainAxisSize.min : MainAxisSize.max,
+            crossAxisAlignment: mobile ? CrossAxisAlignment.start : CrossAxisAlignment.center,
             children: [
-              Expanded(
+              Flexible(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -700,7 +775,7 @@ class _MainContent extends StatelessWidget {
                       ownedItemCount == 0 ? 'Focus, earn coins, and unlock the life you\'ve always dreamed of.' : '$ownedItemCount items unlocked',
                       style: TextStyle(color: muted, fontSize: 12),
                     ),
-                    const Spacer(),
+                    if (!mobile) const Spacer(),
                     OutlinedButton.icon(
                       onPressed: onDreamWorld,
                       icon: const Icon(Icons.arrow_forward_rounded, size: 18),
@@ -716,9 +791,10 @@ class _MainContent extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 30),
+              SizedBox(width: mobile ? 0 : 30, height: mobile ? 18 : 0),
               Container(
-                width: 140,
+                width: mobile ? double.infinity : 140,
+                height: mobile ? 125 : null,
                 decoration: BoxDecoration(
                   color: const Color(0xFFF2F0FF),
                   borderRadius: BorderRadius.circular(18),
@@ -1053,7 +1129,9 @@ class _ActiveFocusView extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) {
+    final mobile = MediaQuery.sizeOf(context).width < 700;
+    return Column(
     children: [
       Align(
         alignment: Alignment.centerLeft,
@@ -1074,7 +1152,7 @@ class _ActiveFocusView extends StatelessWidget {
       const SizedBox(height: 28),
       Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 58, horizontal: 24),
+        padding: EdgeInsets.symmetric(vertical: mobile ? 34 : 58, horizontal: 18),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [Color(0xFF7257F5), Color(0xFF9B7BFF)],
@@ -1124,10 +1202,11 @@ class _ActiveFocusView extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 28),
-      Wrap(
-        spacing: 14,
-        runSpacing: 14,
-        alignment: WrapAlignment.center,
+      Flex(
+        direction: mobile ? Axis.vertical : Axis.horizontal,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           ElevatedButton.icon(
             onPressed: saving ? null : (paused ? onResume : onPause),
@@ -1136,16 +1215,19 @@ class _ActiveFocusView extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: violet,
               foregroundColor: Colors.white,
+              minimumSize: Size(mobile ? double.infinity : 150, 52),
               padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
           ),
+          if (mobile) const SizedBox(height: 12),
           OutlinedButton(
             onPressed: saving ? null : onStop,
             style: OutlinedButton.styleFrom(
               foregroundColor: ink,
+              minimumSize: Size(mobile ? double.infinity : 150, 52),
               padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -1163,6 +1245,7 @@ class _ActiveFocusView extends StatelessWidget {
       ],
     ],
   );
+  }
 }
 
 class _FlipClock extends StatelessWidget {
@@ -1176,28 +1259,26 @@ class _FlipClock extends StatelessWidget {
       (duration.inMinutes % 60).toString().padLeft(2, '0'),
       (duration.inSeconds % 60).toString().padLeft(2, '0'),
     ];
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        for (var i = 0; i < values.length; i++) ...[
-          _FlipUnit(
-            value: values[i],
-            label: ['HOURS', 'MINUTES', 'SECONDS'][i],
+    return LayoutBuilder(
+      builder: (context, constraints) => SizedBox(
+        width: constraints.maxWidth,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < values.length; i++) ...[
+                _FlipUnit(value: values[i], label: ['HOURS', 'MINUTES', 'SECONDS'][i]),
+                if (i < 2)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    child: Text(':', style: TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w800)),
+                  ),
+              ],
+            ],
           ),
-          if (i < 2)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Text(
-                ':',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 44,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-        ],
-      ],
+        ),
+      ),
     );
   }
 }

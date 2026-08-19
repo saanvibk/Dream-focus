@@ -74,11 +74,19 @@ class ShopStorage {
     final user = currentSupabaseUser;
     if (user == null) return [];
     final owned = await loadPurchases();
-    final rows = await supabase.from('dream_world_items').select(
-      'item_id, position_x, position_y, rotation, scale, is_placed',
-    ).eq('user_id', user.id);
     print('DREAM_WORLD_QUERY_USER_ID=${user.id}');
-    print('DREAM_WORLD_ITEM_COUNT=${rows.length}');
+    List<dynamic> rows;
+    try {
+      rows = await supabase.from('dream_world_items').select(
+        'item_id, position_x, position_y, rotation, scale, is_placed',
+      ).eq('user_id', user.id);
+      print('DREAM_WORLD_ITEM_COUNT=${rows.length}');
+    } on PostgrestException catch (e) {
+      // Keep owned items visible if an older deployment has not exposed the
+      // placement table yet. New positions will still report save errors.
+      print('DREAM_WORLD_QUERY_FAILED user=${user.id} code=${e.code} message=${e.message}');
+      return owned;
+    }
     final world = {for (final row in rows) row['item_id'] as String: row};
     return owned.map((p) {
       final row = world[p.itemId];

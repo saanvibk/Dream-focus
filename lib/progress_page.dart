@@ -31,9 +31,7 @@ class ProgressPage extends StatelessWidget {
     );
     final total = FocusActivity.total(daily);
     final best = FocusActivity.bestDay(daily);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(48, 32, 48, 40),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
@@ -60,7 +58,6 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: 18),
           _RecentWeek(daily: daily, duration: _duration),
         ],
-      ),
     );
   }
 }
