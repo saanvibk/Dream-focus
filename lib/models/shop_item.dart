@@ -31,6 +31,14 @@ List<ShopItem> shopCatalog = <ShopItem>[
     icon: '🏢',
   ),
   ShopItem(
+    id: 'cozy_cabin',
+    name: 'Cozy Cabin',
+    category: 'Homes',
+    price: 3500,
+    description: 'A peaceful pixel-art cabin for your dream world.',
+    icon: '🏡',
+  ),
+  ShopItem(
     id: 'family_house',
     name: 'Family House',
     category: 'Homes',

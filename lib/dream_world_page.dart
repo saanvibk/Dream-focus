@@ -5,6 +5,15 @@ import 'services/shop_storage.dart';
 
 const _violet = Color(0xFF7357E8);
 
+// Only assets that exist in assets/world are mapped here. Unmapped catalog
+// items remain available for purchase but are not represented by emoji sprites.
+const _worldAssetByShopId = <String, String>{
+  'cozy_cabin': 'assets/world/homes/cozy_cabin.png',
+  'bicycle': 'assets/world/vehicles/bicycle.png',
+  'cat': 'assets/world/pets/cat.png',
+  'dog': 'assets/world/pets/dog.png',
+};
+
 class DreamWorldPage extends StatefulWidget {
   final int balance;
   final VoidCallback onVisitShop;
@@ -107,7 +116,11 @@ class _DreamWorldPageState extends State<DreamWorldPage> {
       children: [
         const Text(
           'Dream Farm',
-          style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: .2),
+          style: TextStyle(
+            fontSize: 30,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .2,
+          ),
         ),
         const SizedBox(height: 6),
         const Text(
@@ -153,49 +166,59 @@ class _DreamWorldPageState extends State<DreamWorldPage> {
         ),
         LayoutBuilder(
           builder: (context, constraints) {
-            return AspectRatio(
-              aspectRatio: constraints.maxWidth < 600 ? .92 : 1.75,
+            return SizedBox(
+              height: constraints.maxWidth < 600 ? 360 : 520,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: ColoredBox(
                   color: const Color(0xFF8CC9D1),
-                  child: Stack(
-                    children: [
-                      const Positioned.fill(
-                        child: CustomPaint(painter: _LandPainter()),
-                      ),
-                      Transform.scale(
-                        scale: _zoom,
-                        child: Stack(
-                          children: [
-                            for (final p in placed)
-                              if (_item(p.itemId) != null)
-                                _DraggableObject(
-                                  item: _item(p.itemId)!,
-                                  purchase: p,
-                                  selected: _selected == p.itemId,
-                                  onSelect: () =>
-                                      setState(() => _selected = p.itemId),
-                                  onMove: (dx, dy) => _change(
-                                    p.itemId,
-                                    (old) => _copy(
-                                      old,
-                                      x: (old.x + dx).clamp(.08, .92),
-                                      y: (old.y + dy).clamp(.08, .92),
+                  child: InteractiveViewer(
+                    minScale: .65,
+                    maxScale: 2.4,
+                    scaleEnabled: true,
+                    panEnabled: _selected == null,
+                    boundaryMargin: const EdgeInsets.all(180),
+                    child: SizedBox(
+                      width: 960,
+                      height: 540,
+                      child: Stack(
+                        children: [
+                          const Positioned.fill(
+                            child: CustomPaint(painter: _LandPainter()),
+                          ),
+                          Stack(
+                            children: [
+                              for (final p in placed)
+                                if (_worldAssetByShopId.containsKey(p.itemId) &&
+                                    _item(p.itemId) != null)
+                                  _DraggableObject(
+                                    item: _item(p.itemId)!,
+                                    purchase: p,
+                                    selected: _selected == p.itemId,
+                                    onSelect: () =>
+                                        setState(() => _selected = p.itemId),
+                                    onMove: (dx, dy) => _change(
+                                      p.itemId,
+                                      (old) => _copy(
+                                        old,
+                                        x: (old.x + dx).clamp(.08, .92),
+                                        y: (old.y + dy).clamp(.08, .92),
+                                      ),
+                                      save: false,
                                     ),
-                                    save: false,
+                                    onEnd: () {
+                                      final latest = _purchase(p.itemId);
+                                      if (latest != null)
+                                        _storage.savePlacement(latest);
+                                    },
+                                    onControl: (kind) =>
+                                        _control(p.itemId, kind),
                                   ),
-                                  onEnd: () {
-                                    final latest = _purchase(p.itemId);
-                                    if (latest != null)
-                                      _storage.savePlacement(latest);
-                                  },
-                                  onControl: (kind) => _control(p.itemId, kind),
-                                ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -263,17 +286,23 @@ class _DreamWorldPageState extends State<DreamWorldPage> {
     if (kind == 'resize')
       _change(id, (o) => _copy(o, scale: (o.scale + .15).clamp(.7, 1.8)));
     if (kind == 'remove') {
-      _storage.removeFromWorld(id).then((_) {
-        if (mounted) {
-          setState(() {
-            final i = _items.indexWhere((item) => item.itemId == id);
-            if (i >= 0) _items[i] = _copy(_items[i], isPlaced: false);
-            _selected = null;
+      _storage
+          .removeFromWorld(id)
+          .then((_) {
+            if (mounted) {
+              setState(() {
+                final i = _items.indexWhere((item) => item.itemId == id);
+                if (i >= 0) _items[i] = _copy(_items[i], isPlaced: false);
+                _selected = null;
+              });
+            }
+          })
+          .catchError((_) {
+            if (mounted)
+              setState(
+                () => _error = 'Item could not be removed from the world.',
+              );
           });
-        }
-      }).catchError((_) {
-        if (mounted) setState(() => _error = 'Item could not be removed from the world.');
-      });
     }
   }
 
@@ -324,56 +353,98 @@ class _LandPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size s) {
     final p = Paint()..isAntiAlias = false;
-    c.drawRect(Offset.zero & s, p..color = const Color(0xFF78B96D));
-
-    // A simple tile grid gives the map its cozy 2D game feel.
-    const tile = 28.0;
-    p.color = const Color(0x1470473A);
-    for (double x = 0; x < s.width; x += tile) {
-      for (double y = 0; y < s.height; y += tile) {
-        if (((x / tile).floor() + (y / tile).floor()) % 2 == 0) {
-          c.drawRect(Rect.fromLTWH(x, y, tile, tile), p);
+    const t = 32.0;
+    c.drawRect(Offset.zero & s, p..color = const Color(0xFF78A958));
+    // Base tile texture: crisp checker variation, never a smooth fill.
+    for (var x = 0; x < s.width / t; x++) {
+      for (var y = 0; y < s.height / t; y++) {
+        p.color = ((x + y).toInt() % 3 == 0)
+            ? const Color(0xFF80B45C)
+            : const Color(0xFF75A453);
+        c.drawRect(Rect.fromLTWH(x * t, y * t, t, t), p);
+        if ((x * 7 + y * 11).toInt() % 5 == 0) {
+          p.color = const Color(0x32708F4D);
+          c.drawRect(Rect.fromLTWH(x * t + 7, y * t + 20, 5, 3), p);
         }
       }
     }
-
-    // River and wooden bridge.
-    p.color = const Color(0xFF5BAEC2);
-    c.drawPath(Path()..moveTo(s.width * .80, 0)..quadraticBezierTo(s.width * .65, s.height * .3, s.width * .82, s.height * .58)..quadraticBezierTo(s.width * .92, s.height * .78, s.width * .78, s.height)..lineTo(s.width, s.height)..lineTo(s.width, 0)..close(), p);
-    p.color = const Color(0xFFB97948);
-    c.drawRect(Rect.fromLTWH(s.width * .69, s.height * .48, s.width * .23, 32), p);
-    p.color = const Color(0x664A2E25);
-    for (var i = 0; i < 6; i++) c.drawRect(Rect.fromLTWH(s.width * .69 + i * s.width * .045, s.height * .48, 5, 32), p);
-
-    // Dirt paths and crop patch.
-    p.color = const Color(0xFFD9B477);
-    c.drawRect(Rect.fromLTWH(s.width * .08, s.height * .68, s.width * .66, 32), p);
-    c.drawRect(Rect.fromLTWH(s.width * .38, s.height * .14, 30, s.height * .7), p);
-    p.color = const Color(0xFF9A633F);
-    c.drawRect(Rect.fromLTWH(s.width * .13, s.height * .28, s.width * .22, s.height * .2), p);
-    p.color = const Color(0xFF6B9D54);
-    for (var i = 0; i < 4; i++) {
-      c.drawRect(Rect.fromLTWH(s.width * .16 + i * 25, s.height * .32, 8, 8), p);
-      c.drawRect(Rect.fromLTWH(s.width * .16 + i * 25, s.height * .40, 8, 8), p);
+    // Water inlet with pixel ripples.
+    p.color = const Color(0xFF4A9FB2);
+    c.drawRect(Rect.fromLTWH(s.width * .72, 0, s.width * .28, s.height), p);
+    p.color = const Color(0xFF6BC1C0);
+    for (var y = 16.0; y < s.height; y += 42) {
+      c.drawRect(Rect.fromLTWH(s.width * .76, y, 34, 4), p);
+      c.drawRect(Rect.fromLTWH(s.width * .88, y + 16, 22, 4), p);
     }
-
-    // House: shadow, walls, roof, door, and window.
-    p.color = const Color(0x443C322E);
-    c.drawRect(Rect.fromLTWH(s.width * .45 + 5, s.height * .21 + 7, s.width * .21, s.height * .2), p);
-    p.color = const Color(0xFFE9C47A);
-    c.drawRect(Rect.fromLTWH(s.width * .45, s.height * .21, s.width * .21, s.height * .2), p);
-    p.color = const Color(0xFFB95745);
-    c.drawPath(Path()..moveTo(s.width * .42, s.height * .22)..lineTo(s.width * .56, s.height * .08)..lineTo(s.width * .69, s.height * .22)..close(), p);
-    p.color = const Color(0xFF79503A);
-    c.drawRect(Rect.fromLTWH(s.width * .535, s.height * .31, 22, s.height * .1), p);
-    p.color = const Color(0xFFA9D9D8);
-    c.drawRect(Rect.fromLTWH(s.width * .47, s.height * .27, 23, 18), p);
-
-    // Chunky trees.
-    for (final o in [Offset(s.width * .13, s.height * .14), Offset(s.width * .27, s.height * .58), Offset(s.width * .62, s.height * .62), Offset(s.width * .12, s.height * .84)]) {
-      p.color = const Color(0xFF76503A); c.drawRect(Rect.fromLTWH(o.dx - 5, o.dy + 13, 10, 22), p);
-      p.color = const Color(0xFF39734C); c.drawCircle(o, 18, p); p.color = const Color(0xFF4F9757); c.drawCircle(o.translate(-7, -7), 12, p);
+    // Stone-edged shoreline.
+    p.color = const Color(0xFFB7A878);
+    for (var y = 0.0; y < s.height; y += 32)
+      c.drawRect(Rect.fromLTWH(s.width * .69, y, 18, 18), p);
+    // Winding dirt path with darker pixel border.
+    p.color = const Color(0xFF8A6546);
+    c.drawRect(Rect.fromLTWH(0, s.height * .67, s.width * .70, 58), p);
+    c.drawRect(
+      Rect.fromLTWH(s.width * .38, s.height * .18, 58, s.height * .58),
+      p,
+    );
+    p.color = const Color(0xFFD2A96D);
+    c.drawRect(Rect.fromLTWH(0, s.height * .67 + 7, s.width * .70, 42), p);
+    c.drawRect(
+      Rect.fromLTWH(s.width * .38 + 7, s.height * .18, 42, s.height * .58),
+      p,
+    );
+    // Flowers and bushes as small pixel clusters.
+    for (final o in [
+      Offset(125, 110),
+      Offset(235, 390),
+      Offset(520, 425),
+      Offset(635, 150),
+      Offset(300, 120),
+    ]) {
+      p.color = const Color(0xFF3E7745);
+      c.drawRect(Rect.fromLTWH(o.dx, o.dy + 8, 5, 15), p);
+      p.color = const Color(0xFFF4D36B);
+      c.drawRect(Rect.fromLTWH(o.dx - 4, o.dy + 2, 12, 7), p);
+      p.color = const Color(0xFFE88983);
+      c.drawRect(Rect.fromLTWH(o.dx + 1, o.dy - 3, 5, 16), p);
     }
+    for (final o in [
+      Offset(90, 250),
+      Offset(250, 280),
+      Offset(700, 390),
+      Offset(560, 90),
+    ]) {
+      p.color = const Color(0xFF315F3D);
+      c.drawRect(Rect.fromLTWH(o.dx, o.dy + 14, 30, 13), p);
+      p.color = const Color(0xFF4D8B4D);
+      c.drawRect(Rect.fromLTWH(o.dx - 8, o.dy + 5, 34, 18), p);
+      p.color = const Color(0xFF74AA57);
+      c.drawRect(Rect.fromLTWH(o.dx + 5, o.dy, 18, 14), p);
+    }
+    // Layered trees: shadow, trunk, dark canopy, highlight canopy.
+    for (final o in [
+      Offset(95, 85),
+      Offset(205, 445),
+      Offset(580, 450),
+      Offset(850, 100),
+      Offset(760, 350),
+    ]) {
+      p.color = const Color(0x443E4B35);
+      c.drawRect(Rect.fromLTWH(o.dx - 20, o.dy + 35, 64, 14), p);
+      p.color = const Color(0xFF6E4B35);
+      c.drawRect(Rect.fromLTWH(o.dx + 8, o.dy + 18, 14, 36), p);
+      p.color = const Color(0xFF2F6542);
+      c.drawRect(Rect.fromLTWH(o.dx - 12, o.dy + 4, 54, 42), p);
+      p.color = const Color(0xFF43834A);
+      c.drawRect(Rect.fromLTWH(o.dx - 2, o.dy - 8, 40, 28), p);
+      p.color = const Color(0xFF70A956);
+      c.drawRect(Rect.fromLTWH(o.dx + 8, o.dy - 12, 18, 12), p);
+    }
+    // A small free starter plot landmark, drawn as pixel-art terrain only.
+    p.color = const Color(0x443E4B35);
+    c.drawRect(Rect.fromLTWH(430, 250, 180, 18), p);
+    p.color = const Color(0xFFB88A58);
+    c.drawRect(Rect.fromLTWH(420, 238, 180, 12), p);
   }
 
   @override
@@ -381,6 +452,8 @@ class _LandPainter extends CustomPainter {
 }
 
 class _DraggableObject extends StatelessWidget {
+  static const worldWidth = 960.0;
+  static const worldHeight = 540.0;
   final ShopItem item;
   final ShopPurchase purchase;
   final bool selected;
@@ -399,45 +472,96 @@ class _DraggableObject extends StatelessWidget {
   });
   @override
   Widget build(BuildContext c) => Positioned(
-    left: purchase.x * MediaQuery.sizeOf(c).width - 32,
-    top: purchase.y * MediaQuery.sizeOf(c).height - 35,
+    left: purchase.x * worldWidth - 32,
+    top: purchase.y * worldHeight - 35,
     child: GestureDetector(
       onTap: onSelect,
       onPanUpdate: (d) {
         onSelect();
-        onMove(
-          d.delta.dx / MediaQuery.sizeOf(c).width,
-          d.delta.dy / MediaQuery.sizeOf(c).height,
-        );
+        onMove(d.delta.dx / worldWidth, d.delta.dy / worldHeight);
       },
       onPanEnd: (_) => onEnd(),
       child: Transform.rotate(
         angle: purchase.rotation,
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: .92),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? _violet : Colors.transparent,
-              width: 3,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x44000000),
-                blurRadius: 12,
-                offset: Offset(0, 7),
+        child: _worldAssetByShopId[item.id] != null
+            ? Image.asset(
+                _worldAssetByShopId[item.id]!,
+                width: 210 * purchase.scale,
+                height: 155 * purchase.scale,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.none,
+              )
+            : CustomPaint(
+                size: Size(156 * purchase.scale, 140 * purchase.scale),
+                painter: _SmallApartmentPainter(selected: selected),
               ),
-            ],
-          ),
-          child: Text(
-            item.icon,
-            style: TextStyle(fontSize: 42 * purchase.scale),
-          ),
-        ),
       ),
     ),
   );
+}
+
+/// Original pixel sprite for the first production world object. The canvas is
+/// transparent; every mark is a crisp pixel block in the shared world palette.
+class _SmallApartmentPainter extends CustomPainter {
+  final bool selected;
+  const _SmallApartmentPainter({required this.selected});
+  @override
+  void paint(Canvas c, Size s) {
+    final k = s.width / 156;
+    final p = Paint()..isAntiAlias = false;
+    if (selected) {
+      p.color = const Color(0xFFFAE58A);
+      c.drawRect(Rect.fromLTWH(12 * k, 6 * k, 132 * k, 126 * k), p);
+    }
+    p.color = const Color(0x553C352B);
+    c.drawRect(Rect.fromLTWH(18 * k, 116 * k, 116 * k, 13 * k), p);
+    // Side wall and front wall, with a stepped 3/4 silhouette.
+    p.color = const Color(0xFFB96F4C);
+    c.drawRect(Rect.fromLTWH(32 * k, 42 * k, 82 * k, 72 * k), p);
+    p.color = const Color(0xFFD79A62);
+    c.drawRect(Rect.fromLTWH(20 * k, 52 * k, 82 * k, 62 * k), p);
+    // Roof planes.
+    p.color = const Color(0xFF713F3D);
+    final roof = Path()
+      ..moveTo(14 * k, 53 * k)
+      ..lineTo(57 * k, 18 * k)
+      ..lineTo(126 * k, 38 * k)
+      ..lineTo(97 * k, 62 * k)
+      ..close();
+    c.drawPath(roof, p);
+    p.color = const Color(0xFF96504A);
+    c.drawPath(
+      Path()
+        ..moveTo(57 * k, 18 * k)
+        ..lineTo(137 * k, 45 * k)
+        ..lineTo(126 * k, 61 * k)
+        ..lineTo(97 * k, 62 * k)
+        ..close(),
+      p,
+    );
+    // Door, windows, and bright trim.
+    p.color = const Color(0xFF4B3A43);
+    c.drawRect(Rect.fromLTWH(52 * k, 78 * k, 22 * k, 36 * k), p);
+    p.color = const Color(0xFFF1C979);
+    c.drawRect(Rect.fromLTWH(57 * k, 83 * k, 12 * k, 25 * k), p);
+    for (final x in [27.0, 80.0]) {
+      p.color = const Color(0xFFF0D98F);
+      c.drawRect(Rect.fromLTWH(x * k, 67 * k, 25 * k, 22 * k), p);
+      p.color = const Color(0xFF6CB4BD);
+      c.drawRect(Rect.fromLTWH((x + 4) * k, 71 * k, 17 * k, 14 * k), p);
+      p.color = const Color(0xFFDBB66A);
+      c.drawRect(Rect.fromLTWH((x + 12) * k, 71 * k, 3 * k, 14 * k), p);
+    }
+    // Tiny chimney and roof highlight pixels.
+    p.color = const Color(0xFF6A4540);
+    c.drawRect(Rect.fromLTWH(91 * k, 27 * k, 12 * k, 22 * k), p);
+    p.color = const Color(0xFFE2A36A);
+    c.drawRect(Rect.fromLTWH(23 * k, 56 * k, 6 * k, 4 * k), p);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SmallApartmentPainter old) =>
+      old.selected != selected;
 }
 
 class _Panel extends StatelessWidget {
@@ -457,7 +581,7 @@ class _Panel extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          Text(item.icon, style: const TextStyle(fontSize: 30)),
+          const Icon(Icons.home_work_outlined, color: _violet),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -517,9 +641,17 @@ class _OwnedPanel extends StatelessWidget {
                 for (final p in items)
                   if (catalog.where((i) => i.id == p.itemId).isNotEmpty)
                     ActionChip(
-                      avatar: Text(
-                        catalog.firstWhere((i) => i.id == p.itemId).icon,
-                      ),
+                      avatar: _worldAssetByShopId[p.itemId] != null
+                          ? Image.asset(
+                              _worldAssetByShopId[p.itemId]!,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.none,
+                            )
+                          : Text(
+                              catalog.firstWhere((i) => i.id == p.itemId).icon,
+                            ),
                       label: Text(
                         catalog.firstWhere((i) => i.id == p.itemId).name,
                       ),

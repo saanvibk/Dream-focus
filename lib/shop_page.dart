@@ -224,7 +224,18 @@ class _ShopPageState extends State<ShopPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(i.icon, style: const TextStyle(fontSize: 38)),
+                      if (i.id == 'cozy_cabin')
+                        SizedBox(
+                          height: 76,
+                          width: double.infinity,
+                          child: Image.asset(
+                            'assets/world/homes/cozy_cabin.png',
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.none,
+                          ),
+                        )
+                      else
+                        Text(i.icon, style: const TextStyle(fontSize: 38)),
                       const SizedBox(height: 8),
                       Text(
                         i.name,
